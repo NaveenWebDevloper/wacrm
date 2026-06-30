@@ -93,6 +93,19 @@ export async function GET(request: Request) {
       )
     }
 
+    // ── Fast-path: check the static META_VERIFY_TOKEN env var first.
+    // This is the standard Meta webhook verification flow and works
+    // even before any whatsapp_config row exists in the database
+    // (initial setup / first-time webhook registration).
+    const envToken = process.env.META_VERIFY_TOKEN
+    if (envToken && verifyToken === envToken) {
+      return new Response(challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      })
+    }
+
+    // ── Fallback: check encrypted tokens stored in whatsapp_config rows.
     // Fetch all whatsapp configs to check verify tokens
     const { data: configs, error: configError } = await supabaseAdmin()
       .from('whatsapp_config')
