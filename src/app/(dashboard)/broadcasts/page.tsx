@@ -16,7 +16,7 @@ import {
 import { Radio, Plus, Loader2 } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
-import { getBroadcastStatus } from '@/lib/broadcast-status';
+import { getBroadcastStatus, getRecurringStatus } from '@/lib/broadcast-status';
 
 /**
  * Poll cadence while any broadcast is sending. Kept modest so we don't
@@ -56,10 +56,26 @@ function RateCell({
   );
 }
 
+interface BroadcastListItem {
+  id: string;
+  name: string;
+  template_name: string;
+  status: string;
+  created_at: string;
+  is_recurring: boolean;
+  total_recipients: number;
+  delivered_count: number;
+  read_count: number;
+  repeat_type?: string;
+  execution_count?: number;
+  next_run_at?: string;
+  last_run_at?: string;
+}
+
 export default function BroadcastsPage() {
   const router = useRouter();
   const canCreate = useCan('send-messages');
-  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
+  const [items, setItems] = useState<BroadcastListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,13 +85,53 @@ export default function BroadcastsPage() {
   async function fetchBroadcasts() {
     try {
       const supabase = createClient();
-      const { data, error: fetchError } = await supabase
+      
+      const { data: bcs, error: bcError } = await supabase
         .from('broadcasts')
+        .select('*')
+        .is('parent_series_id', null)
+        .order('created_at', { ascending: false });
+
+      if (bcError) throw bcError;
+
+      const { data: series, error: seriesError } = await supabase
+        .from('broadcast_series')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
-      setBroadcasts(data ?? []);
+      if (seriesError) throw seriesError;
+
+      const combined: BroadcastListItem[] = [
+        ...(bcs ?? []).map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          template_name: b.template_name,
+          status: b.status,
+          created_at: b.created_at,
+          is_recurring: false,
+          total_recipients: b.total_recipients,
+          delivered_count: b.delivered_count,
+          read_count: b.read_count,
+        })),
+        ...(series ?? []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          template_name: s.template_name,
+          status: s.status,
+          created_at: s.created_at,
+          is_recurring: true,
+          total_recipients: 0,
+          delivered_count: 0,
+          read_count: 0,
+          repeat_type: s.repeat_type,
+          execution_count: s.execution_count,
+          next_run_at: s.next_run_at,
+          last_run_at: s.last_run_at,
+        }))
+      ];
+
+      combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setItems(combined);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load broadcasts');
     } finally {
@@ -88,8 +144,8 @@ export default function BroadcastsPage() {
   }, []);
 
   const anySending = useMemo(
-    () => broadcasts.some((b) => b.status === 'sending'),
-    [broadcasts],
+    () => items.some((item) => !item.is_recurring && item.status === 'sending'),
+    [items],
   );
 
   useEffect(() => {
@@ -195,7 +251,7 @@ export default function BroadcastsPage() {
         </GatedButton>
       </div>
 
-      {broadcasts.length === 0 ? (
+      {items.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-card">
           <Radio className="mb-3 h-10 w-10 text-muted-foreground" />
           <p className="text-sm font-medium text-foreground">No broadcasts yet</p>
@@ -220,7 +276,7 @@ export default function BroadcastsPage() {
                 <TableHead className="text-muted-foreground">Name</TableHead>
                 <TableHead className="hidden text-muted-foreground md:table-cell">Template</TableHead>
                 <TableHead className="hidden text-right text-muted-foreground sm:table-cell">
-                  Recipients
+                  Recipients / Schedule
                 </TableHead>
                 <TableHead className="hidden text-muted-foreground lg:table-cell">Delivery</TableHead>
                 <TableHead className="hidden text-muted-foreground lg:table-cell">Read</TableHead>
@@ -229,36 +285,60 @@ export default function BroadcastsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {broadcasts.map((broadcast) => {
-                const status = getBroadcastStatus(broadcast.status);
+              {items.map((item) => {
+                const status = item.is_recurring 
+                  ? getRecurringStatus(item.status) 
+                  : getBroadcastStatus(item.status);
+                
                 return (
                   <TableRow
-                    key={broadcast.id}
+                    key={item.id}
                     className="cursor-pointer border-border hover:bg-muted/50"
-                    onClick={() => router.push(`/broadcasts/${broadcast.id}`)}
+                    onClick={() => router.push(`/broadcasts/${item.id}`)}
                   >
                     <TableCell className="font-medium text-foreground">
-                      {broadcast.name}
+                      <div className="flex flex-col">
+                        <span>{item.name}</span>
+                        {item.is_recurring && (
+                          <span className="text-[10px] text-primary font-medium tracking-wide uppercase mt-0.5">
+                            Recurring Series
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground md:table-cell">
-                      {broadcast.template_name}
+                      {item.template_name}
                     </TableCell>
                     <TableCell className="hidden text-right text-muted-foreground tabular-nums sm:table-cell">
-                      {broadcast.total_recipients}
+                      {item.is_recurring ? (
+                        <span className="text-xs text-muted-foreground">
+                          {item.repeat_type} ({item.execution_count} runs)
+                        </span>
+                      ) : (
+                        item.total_recipients
+                      )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.delivered_count}
-                        total={broadcast.total_recipients}
-                        color="bg-primary"
-                      />
+                      {item.is_recurring ? (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      ) : (
+                        <RateCell
+                          value={item.delivered_count}
+                          total={item.total_recipients}
+                          color="bg-primary"
+                        />
+                      )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.read_count}
-                        total={broadcast.total_recipients}
-                        color="bg-blue-500"
-                      />
+                      {item.is_recurring ? (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      ) : (
+                        <RateCell
+                          value={item.read_count}
+                          total={item.total_recipients}
+                          color="bg-blue-500"
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       <span
@@ -274,7 +354,19 @@ export default function BroadcastsPage() {
                       </span>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground sm:table-cell">
-                      {new Date(broadcast.created_at).toLocaleDateString()}
+                      {item.is_recurring ? (
+                        item.status === 'active' && item.next_run_at ? (
+                          <span className="text-xs text-green-400 font-medium">
+                            Next: {new Date(item.next_run_at).toLocaleDateString()}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Last: {item.last_run_at ? new Date(item.last_run_at).toLocaleDateString() : 'Never'}
+                          </span>
+                        )
+                      ) : (
+                        new Date(item.created_at).toLocaleDateString()
+                      )}
                     </TableCell>
                   </TableRow>
                 );

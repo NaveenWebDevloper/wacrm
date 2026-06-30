@@ -337,6 +337,50 @@ export interface Broadcast {
   replied_count: number;
   failed_count: number;
   created_at: string;
+  parent_series_id?: string;
+}
+
+export type RecurringStatus = 'active' | 'paused' | 'cancelled' | 'completed';
+
+export interface BroadcastSeries {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  template_name: string;
+  template_language: string;
+  template_variables?: Record<string, unknown>;
+  audience_filter?: Record<string, unknown>;
+  repeat_type: 'daily' | 'weekly' | 'monthly' | 'cron';
+  repeat_time?: string;             // HH:mm:ss or HH:mm
+  day_of_week?: number;             // 0-6
+  day_of_month?: number;            // 1-31
+  cron_expression?: string;
+  timezone: string;
+  status: RecurringStatus;
+  next_run_at?: string;
+  last_run_at?: string;
+  execution_count: number;
+  max_executions?: number;
+  end_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BroadcastExecutionLog {
+  id: string;
+  account_id: string;
+  series_id?: string;
+  broadcast_id: string;
+  status: 'running' | 'success' | 'failed';
+  started_at: string;
+  finished_at?: string;
+  duration_ms?: number;
+  recipient_count: number;
+  sent_count: number;
+  failed_count: number;
+  error_message?: string;
+  created_at: string;
 }
 
 export interface BroadcastRecipient {
@@ -363,6 +407,7 @@ export interface BroadcastRecipient {
   created_at: string;
   contact?: Contact;
 }
+
 
 // ============================================================
 // Automations (migration 006)

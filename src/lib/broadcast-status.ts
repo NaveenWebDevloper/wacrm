@@ -11,7 +11,7 @@
  * light mode (a solid slate-400 would be too faint on white).
  */
 
-import type { BroadcastStatus, RecipientStatus } from "@/types";
+import type { BroadcastStatus, RecipientStatus, RecurringStatus } from "@/types";
 
 export interface StatusDisplay {
   label: string;
@@ -43,6 +43,26 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
   },
   failed: {
     label: "Failed",
+    classes: "bg-red-500/10 text-red-400 border-red-500/20",
+  },
+};
+
+export const recurringStatusConfig: Record<RecurringStatus, StatusDisplay> = {
+  active: {
+    label: "Active",
+    classes: "bg-green-500/10 text-green-400 border-green-500/20",
+    pulse: true,
+  },
+  paused: {
+    label: "Paused",
+    classes: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  },
+  completed: {
+    label: "Completed",
+    classes: "bg-slate-500/10 text-muted-foreground border-slate-500/20",
+  },
+  cancelled: {
+    label: "Cancelled",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
   },
 };
@@ -86,9 +106,17 @@ export function getBroadcastStatus(status: string): StatusDisplay {
   );
 }
 
+export function getRecurringStatus(status: string): StatusDisplay {
+  return (
+    recurringStatusConfig[status as RecurringStatus] ??
+    recurringStatusConfig.active
+  );
+}
+
 export function getRecipientStatus(status: string): StatusDisplay {
   return (
     recipientStatusConfig[status as RecipientStatus] ??
     recipientStatusConfig.pending
   );
 }
+

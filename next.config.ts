@@ -125,4 +125,25 @@ const nextConfig: NextConfig = {
   },
 };
 
+if (process.env.NODE_ENV === 'development') {
+  const globalScheduler = globalThis as any;
+  if (!globalScheduler.__internalCronInterval) {
+    console.log('[Scheduler] Initializing local development HTTP setInterval trigger (every 60s)...');
+    globalScheduler.__internalCronInterval = setInterval(async () => {
+      try {
+        const secret = process.env.AUTOMATION_CRON_SECRET || 'test_cron_secret';
+        const res = await fetch('http://localhost:3000/api/automations/cron', {
+          headers: { 'x-cron-secret': secret }
+        });
+        const data = await res.json();
+        console.log('[Scheduler] Development setInterval ticked. Auto-triggered cron endpoint success:', data);
+      } catch (err: any) {
+        if (!err.message.includes('ECONNREFUSED')) {
+          console.error('[Scheduler] Auto-triggered cron execution failed:', err.message);
+        }
+      }
+    }, 60000);
+  }
+}
+
 export default nextConfig;
